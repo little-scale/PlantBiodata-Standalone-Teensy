@@ -5,16 +5,24 @@
 #include <SerialFlash.h>
 
 // GUItool: begin automatically generated code
-AudioPlaySdWav playSdWav1;      //xy=258,270
-AudioEffectFreeverb freeverb1;  //xy=426,308
-AudioMixer4 mixer1;             //xy=591,287
-AudioOutputMQS mqs1;            //xy=737,286
-AudioConnection patchCord1(playSdWav1, 0, freeverb1, 0);
-AudioConnection patchCord2(playSdWav1, 0, mixer1, 0);
-AudioConnection patchCord3(freeverb1, 0, mixer1, 1);
-AudioConnection patchCord4(mixer1, 0, mqs1, 0);
-AudioConnection patchCord5(mixer1, 0, mqs1, 1);
+AudioPlaySdWav           playSdWav1;     //xy=180,286
+AudioAmplifier           amp1;           //xy=314,287
+AudioEffectFade          fade1;          //xy=456,285
+AudioEffectFreeverb      freeverb1;      //xy=576,324
+AudioMixer4              mixer1;         //xy=741,303
+AudioOutputMQS           mqs1;           //xy=1034,302
+AudioConnection          patchCord1(playSdWav1, 0, amp1, 0);
+AudioConnection          patchCord2(amp1, fade1);
+AudioConnection          patchCord3(fade1, 0, mixer1, 0);
+AudioConnection          patchCord4(fade1, freeverb1);
+AudioConnection          patchCord5(freeverb1, 0, mixer1, 1);
+AudioConnection          patchCord6(mixer1, 0, mqs1, 0);
+AudioConnection          patchCord7(mixer1, 0, mqs1, 1);
 // GUItool: end automatically generated code
+
+
+
+
 
 
 #define SDCARD_CS_PIN BUILTIN_SDCARD
@@ -25,7 +33,7 @@ const int interruptPin = 5;
 const int LED1 = 2;
 const int LED2 = 3;
 
-const int MIDI_offset_pitch = 60; 
+const int MIDI_offset_pitch = 60;
 
 const byte samplesize = 10;             //set sample array size
 const byte analysize = samplesize - 1;  //trim for analysis array,
@@ -35,7 +43,7 @@ volatile byte sampleIndex = 0;
 volatile unsigned long samples[samplesize];
 
 float threshold = 0.1;  //threshold multiplier
-int threshold_data; 
+int threshold_data;
 float threshMin = 1.61;  //scaling threshold min
 float threshMax = 4.01;  //scaling threshold max
 float prevThreshold = 0;
@@ -51,6 +59,8 @@ int rawSerialDelay = 0;
 unsigned long currentMillis = 0;
 unsigned long prevMillis = 0;
 
+int setnote_previous;
+int fadeTime = 25; 
 
 
 
@@ -82,18 +92,20 @@ void setup() {
     }
   }
 
-  mixer1.gain(0, 0.7);
-  mixer1.gain(1, 0.7);
+  mixer1.gain(0, 0.5);
+  mixer1.gain(1, 0.5);
+  amp1.gain(0.5); 
 
-  delay(500); 
+  freeverb1.roomsize(0.9); 
+  freeverb1.damping(0.3); 
+
+  delay(500);
 
   playSdWav1.stop();
   playSdWav1.play("01.wav");
   Serial.println("Playing SD Card Wave File");
 
-  delay(500); 
-
-  
+  delay(500);
 }
 
 void loop() {
@@ -101,7 +113,7 @@ void loop() {
   if (sampleIndex >= samplesize) {
     analyzeSample();
   }
-  threshold = map((float)analogRead(A10), 0.0, 1023.0, 0.1, 1.61); 
+  threshold = map((float)analogRead(A10), 0.0, 1023.0, 0.1, 4.0);
 }
 
 //*******Analysis of sample data
@@ -166,6 +178,7 @@ void analyzeSample() {
     //*********
 
     if (change) {
+      
 
       //analyze the values
       dur = 150 + (map(delta % 127, 0, 127, 100, 5500));  //length of note
@@ -175,81 +188,106 @@ void analyzeSample() {
       vel = delta % 127;
       vel = map(vel, 0, 127, 80, 110);  //musical velocity range
 
+
       //set scaling, root key, note
-      setnote = map(averg % 127, 0, 127, 1, 13);  //derive note, min and max note
-      Serial.println(setnote);
+      setnote = map(averg % 127, 0, 127, 1, 16);  //derive note, min and max note
+      
+      if (setnote != setnote_previous) {
+        Serial.println(threshold);
+        usbMIDI.sendNoteOff(setnote_previous + MIDI_offset_pitch, 0, 1);
+        delay(10); 
+        usbMIDI.sendNoteOn(setnote + MIDI_offset_pitch, 127, 1);
 
-      usbMIDI.sendNoteOff(setnote + MIDI_offset_pitch, 0, 1); 
+        setnote_previous = setnote; 
 
-      playSdWav1.stop();
+        Serial.println(setnote);
+        fade1.fadeOut(fadeTime); 
+        delay(fadeTime); 
+        playSdWav1.stop();
 
-      usbMIDI.sendNoteOn(setnote + MIDI_offset_pitch, 127, 1); 
+        fade1.fadeIn(fadeTime); 
 
-      switch (setnote) {
-        case 1:
-          playSdWav1.play("01.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+        switch (setnote) {
+          case 1:
+            playSdWav1.play("Sample_01.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 2:
-          playSdWav1.play("02.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 2:
+            playSdWav1.play("Sample_02.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 3:
-          playSdWav1.play("03.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 3:
+            playSdWav1.play("Sample_03.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 4:
-          playSdWav1.play("04.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 4:
+            playSdWav1.play("Sample_04.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 5:
-          playSdWav1.play("05.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 5:
+            playSdWav1.play("Sample_05.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 6:
-          playSdWav1.play("06.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 6:
+            playSdWav1.play("Sample_06.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 7:
-          playSdWav1.play("07.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 7:
+            playSdWav1.play("Sample_07.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 8:
-          playSdWav1.play("08.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 8:
+            playSdWav1.play("Sample_10.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 9:
-          playSdWav1.play("09.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 9:
+            playSdWav1.play("Sample_09.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 10:
-          playSdWav1.play("10.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 10:
+            playSdWav1.play("Sample_010.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 11:
-          playSdWav1.play("11.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 11:
+            playSdWav1.play("Sample_011.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 12:
-          playSdWav1.play("12.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 12:
+            playSdWav1.play("Sample_012.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
 
-        case 13:
-          playSdWav1.play("13.wav");
-          Serial.println("Playing SD Card Wave File");
-          break;
+          case 13:
+            playSdWav1.play("Sample_013.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
+
+          case 14:
+            playSdWav1.play("Sample_014.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
+
+          case 15:
+            playSdWav1.play("Sample_015.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
+
+          case 16:
+            playSdWav1.play("Sample_016.wav");
+            Serial.println("Playing SD Card Wave File");
+            break;
+        }
       }
 
       // setnote = scaleNote(setnote, scaleSelect, root);  //scale the note
